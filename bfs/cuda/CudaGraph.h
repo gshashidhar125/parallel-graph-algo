@@ -1,49 +1,106 @@
-//#ifndef Graph_H
-//#define Graph_H
+//#ifndef CudaGraph_H
+//#define CudaGraph_H
 #include <vector>
 #include <iostream>
+#include <stdio.h>
+
+#define DEBUG
+
+#ifdef DEBUG
+#define print(...) printf(__VA_ARGS__)
+#else
+#define print(...) ;
+#endif
+
+#define outs(...) print(__VA_ARGS__)
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 200)
+  # error printf is only supported on devices of compute capability 2.0 and higher, please compile with -arch=sm_20 or higher
+#endif
 
 using namespace std;
-
-typedef pair<int, pair<int, int> > triple;
-typedef vector<triple> listTriple;
 
 class CudaGraphClass {
 
 public:
 //private:
-    int numNodes, numEdges;
+    int numVertices, numEdges;
     int *row[2];
 
-    GraphClass() {
-        numNodes = 0;
+    CudaGraphClass() {
+        numVertices = 0;
         numEdges = 0;
     }
-    GraphClass(int nodes, int edges) {
-        numNodes = nodes;
+    CudaGraphClass(int vertices, int edges) {
+        numVertices = vertices;
         numEdges = edges;
 // NumVertices starting from 1 to NumVertices plus an addition Sentinel node
-// which points to the last index of the Graph[1] array.
-        row[0] = calloc(numNodes + 2, sizeof(int));
-        row[1] = calloc(numEdges + 1, sizeof(int));
+// which points to the last index of the row[1] array.
+        row[0] = new int [numVertices + 2]();
+        row[1] = new int [numEdges + 1]();
     }
 
     void populate() {
-
-
-    }
-    void print() {
+        
+        int **AdjMatrix, i, j, k;
+        AdjMatrix = new int* [numVertices + 1]();
+        for (i = 0; i <= numVertices; i++) {
     
-        /*for (listTriple::iterator it = edgeList.begin(); it != edgeList.end(); it++) {
-            cout << (*it).first << (*it).second.first << (*it).second.second << "\n";
-        }*/
-        for (int i = 0; i < numEdges; i++) {
-            cout << edgeList[i].first << " - " << edgeList[i].second.first << "\t = " << edgeList[i].second.second << "\n";
+            AdjMatrix[i] = new int [numVertices + 1]();
         }
+        i = numEdges;
+        int lastj = 1, currentIndex = 1;
+        while(i) {
+    
+            scanf("%d %d", &j, &k);
+            AdjMatrix[j][k] = 1;
+            while (lastj <= j || lastj == 1) {
+                if (lastj == 1) {
+                    row[0][0] = currentIndex;
+                    row[0][1] = currentIndex;
+                }else {
+                    row[0][lastj] = currentIndex;
+                }
+                lastj++;
+            }
+    //        if (AdjMatrix[k][j] != 1)
+                row[1][currentIndex] = k;
+            currentIndex ++;
+            i--;
+        }
+        row[1][0] = 0;
+        // Sentinel node just points to the end of the last node in the graph
+        while (lastj <= numVertices + 1) {
+            row[0][lastj] = currentIndex;
+            lastj++;
+        }
+        //row[0][lastj+1] = currentIndex;
+        for (i = 1; i <= numVertices + 1; i++)
+            print("Vertex: %d = %d\n", i, row[0][i]);
+    
+        print("Second Array:\n");
+        for (i = 1; i <= numEdges; i++)
+            print("Edges: Index: %d, Value = %d\n", i, row[1][i]);
+    
+        j = 1;
+        for (i = 1; i <= numVertices; i++) {
+    
+            currentIndex = row[0][i];
+            while (currentIndex < row[0][i+1]) {
+    //            print("%d %d\n", i, row[1][currentIndex]);
+                if (AdjMatrix[i][row[1][currentIndex]] != 1 /*&&
+                    AdjMatrix[row[1][currentIndex]][i] != 1*/) {
+                    outs("\n\nGraph Do not Match\n\n");
+                    break;
+                }
+                j++;
+                currentIndex ++;
+            }
+        } 
     }
-    void change() {
-        edgeList[0].first = 99;
-        edgeList[0].second.second = 44;
+    
+    void printGraph() {
+
     }
 };
 //#endif

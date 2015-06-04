@@ -1,8 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
-#include "Graph.h"
-#include "Thread.h"
+#include "CudaGraph.h"
 
 #include <cuda.h>
 using namespace std;
@@ -26,21 +25,11 @@ int main(int argc, char *argv[]) {
 
     int numNodes, numEdges;
     inputFile >> numNodes >> numEdges;
-    GraphClass graph(numNodes, numEdges);
+    CudaGraphClass graph(numNodes, numEdges);
 
     graph.populate();
 
-    triple tempEdge;
-
-    for (int i = 0; i < numEdges; i++) {
-        inputFile >> tempEdge.first >> tempEdge.second.first >> tempEdge.second.second;
-        graph.addEdge(tempEdge);
-    }
-
-    //cout << numNodes << ", " << numEdges << "\n";
-    graph.print();
-
-    
+    graph.printGraph();
 
     return 0;
 }
