@@ -27,9 +27,10 @@ int main(int argc, char *argv[]) {
     inputFile >> numNodes >> numEdges;
     CudaGraphClass graph(numNodes, numEdges);
 
-    graph.populate();
+    graph.populate(argv[1]);
 
     graph.printGraph();
 
+    graph.callBFS();
     return 0;
 }

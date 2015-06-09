@@ -1,7 +1,9 @@
 //#ifndef CudaGraph_H
 //#define CudaGraph_H
+#include <iostream>
 #include <vector>
 #include <iostream>
+#include <fstream>
 #include <stdio.h>
 
 #define DEBUG
@@ -26,6 +28,7 @@ public:
 //private:
     int numVertices, numEdges;
     int *row[2];
+    ifstream inputFile;
 
     CudaGraphClass() {
         numVertices = 0;
@@ -40,8 +43,15 @@ public:
         row[1] = new int [numEdges + 1]();
     }
 
-    void populate() {
+    void populate(char *fileName) {
         
+        inputFile.open(fileName);
+        if (!inputFile.is_open()){
+            cout << "invalid file";
+            return;
+        }
+
+        cout << numVertices << "--" << numEdges << endl;
         int **AdjMatrix, i, j, k;
         AdjMatrix = new int* [numVertices + 1]();
         for (i = 0; i <= numVertices; i++) {
@@ -50,9 +60,12 @@ public:
         }
         i = numEdges;
         int lastj = 1, currentIndex = 1;
+        inputFile >> j >> k;
         while(i) {
     
-            scanf("%d %d", &j, &k);
+            //scanf("%d %d", &j, &k);
+            inputFile >> j >> k;
+            cout << "Read: " << j << "-- " << k;
             AdjMatrix[j][k] = 1;
             while (lastj <= j || lastj == 1) {
                 if (lastj == 1) {
@@ -102,5 +115,8 @@ public:
     void printGraph() {
 
     }
+
+    void callBFS();
+    int copyGraphToDevice();
 };
 //#endif
