@@ -11,48 +11,103 @@ if( err != cudaSuccess) { \
 
 using namespace std;
 
-__device__ int *graph[2], *worklist, d_tail;
+__device__ int *graph[3], d_numVertices, d_numEdges, *worklist, d_tail;
+__device__ int *dist;
 __device__ bool d_terminate;
-__global__ void CudaInitialize(int *vertexArray, int *edgeArray) {
 
-    graph[0] = vertexArray;
-    graph[1] = edgeArray;
+__global__ void CudaInitialize(int *edgeArray1, int *edgeArray2, int *weightArray, int *distanceArray, int numVertices, int numEdges) {
+
+    d_numVertices = numVertices;
+    d_numEdges = numEdges;
+    graph[0] = edgeArray1;
+    graph[1] = edgeArray2;
+    graph[2] = weightArray;
+    dist = distanceArray;
 }
-__global__ void Cuda_SSSP(CudaGraphClass *graphData) {
+__global__ void CudaPrintGraph() {
+
+    print("\nEdge Array:\n");
+    for (int i = 0; i < d_numEdges + 1; i++)
+        print(" %d-%d[%d]", graph[0][i], graph[1][i], graph[2][i]);
+    print("\n");
+}
+__global__ void Cuda_SSSP() {
     
-    printf("BlockId = %d, Thread ID : %d\n", blockIdx.x, threadIdx.x);
-    int tId = blockIdx.x * blockDim.x + threadIdx.x;
-}
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid > d_numEdges)
+        return;
 
+    // Edge (u, v)
+    int u = graph[0][tid];
+    int v = graph[1][tid];
+    for(int i = 0; i < d_numVertices; i++) {
+        if (dist[v] < dist[u] + graph[2][tid])
+            dist[v] = dist[u] + graph[2][tid];
+    }
+}
 void CudaGraphClass::callSSSP() {
 
     print("Hello inside cuda code\n");
-    copyGraphToDevice();
-    
     int terminate = false;
     while (terminate == false) {
         terminate = true;
 //        outs("Queue: Head: %d, Tail: %d\n", currentQueueHead, currentQueueTail);
         cudaMemcpyToSymbol(d_terminate, &terminate, sizeof(bool), 0, cudaMemcpyHostToDevice);
 //        cudaMemcpyToSymbol(d_tail, &tail, sizeof(bool), 0, cudaMemcpyHostToDevice);
-        Cuda_SSSP<<<2, 5>>>(this);
+        Cuda_SSSP<<<2, 5>>>();
         cudaThreadSynchronize();
         cudaMemcpyFromSymbol(&terminate, d_terminate, sizeof(bool), 0, cudaMemcpyDeviceToHost);
     }
 }
+
 int CudaGraphClass::copyGraphToDevice() {
 
-    int *vertexArray, *edgeArray;
+    int *edgeArray1, *edgeArray2, *weightArray, *distanceArray;
     cudaError_t err;
-    err = cudaMalloc((void **)&vertexArray, (numVertices + 2) * sizeof(int));
+    err = cudaMalloc((void **)&edgeArray1, (numEdges + 1) * sizeof(int));
     CUDA_ERR_CHECK;
-    err = cudaMalloc((void **)&edgeArray, (numEdges + 1) * sizeof(int));
+    err = cudaMalloc((void **)&edgeArray2, (numEdges + 1) * sizeof(int));
     CUDA_ERR_CHECK;
-    err = cudaMemcpy(vertexArray, row[0], (numVertices + 2) * sizeof(int), cudaMemcpyHostToDevice);
+    err = cudaMalloc((void **)&weightArray, (numEdges + 1) * sizeof(int));
     CUDA_ERR_CHECK;
-    err = cudaMemcpy(edgeArray, row[1], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
+    err = cudaMalloc((void **)&distanceArray, (numVertices + 1) * sizeof(int));
     CUDA_ERR_CHECK;
-    CudaInitialize<<<1, 1>>>(edgeArray, vertexArray);
+    err = cudaMemcpy(edgeArray1, row[0], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
+    CUDA_ERR_CHECK;
+    err = cudaMemcpy(edgeArray2, row[1], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
+    CUDA_ERR_CHECK;
+    err = cudaMemcpy(weightArray, row[2], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
+    CUDA_ERR_CHECK;
+    CudaInitialize<<<1, 1>>>(edgeArray1, edgeArray2, weightArray, distanceArray, numVertices, numEdges);
     cudaThreadSynchronize();
     return 0;
+}
+
+void CudaGraphClass::populate(char *fileName) {
+
+    inputFile.open(fileName);
+    if (!inputFile.is_open()){
+        cout << "invalid file";
+        return;
+    }
+
+    srand(time(NULL));
+
+    cout << numVertices << "--" << numEdges << endl;
+    int i = 0, j, k;
+    inputFile >> j >> k;
+    while(i != numEdges) {
+
+        //scanf("%d %d", &j, &k);
+        inputFile >> j >> k;
+        cout << "Read: " << j << "-- " << k;
+        row[0][i] = j;
+        row[1][i] = k;
+        row[2][i] = (rand() % 2) ? rand() % 10 - 10 : rand() % 10;
+        i++;
+    }
+}
+void CudaGraphClass::printGraph() {
+    CudaPrintGraph<<<1, 1>>>();
+    cudaThreadSynchronize();
 }

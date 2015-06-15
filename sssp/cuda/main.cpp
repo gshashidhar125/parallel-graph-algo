@@ -28,6 +28,7 @@ int main(int argc, char *argv[]) {
     CudaGraphClass graph(numNodes, numEdges);
 
     graph.populate(argv[1]);
+    graph.copyGraphToDevice();
 
     graph.printGraph();
 
