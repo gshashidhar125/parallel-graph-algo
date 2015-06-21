@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <list>
 
 class Node_t;
@@ -17,9 +18,13 @@ public:
         return child.size();
     }
 
-    void insert(Node_t *newNode) {
-        // Min-Heap insert
-        //child.push_back(newNode);
+    void printNode(std::string spaces) {
+
+        std::cout << spaces << key << "\n";
+        spaces = spaces + "  ";
+        for (NodeList_t::iterator it = child.begin(); it != child.end(); ++it ) {
+            (*it)->printNode(spaces);
+        }
     }
 };
 
@@ -48,6 +53,7 @@ public:
         for (NodeList_t::iterator it = root.begin(); it != root.end(); ++it ) {
             if((*it)->key < minKey) {
                 minNode = *it;
+                minKey = minNode->key;
             }
         }
         if (!minNode)
@@ -72,19 +78,35 @@ public:
         Node_t *rank[100] = {};
         Node_t *current, *mergedNode;
         int i = 0, currentRank;
+        bool done, alreadyMoved;
 
-        for (NodeList_t::iterator it = root.begin(); it != root.end(); ++it ) {
+        for (NodeList_t::iterator it = root.begin(); it != root.end(); ) {
             current = *it;
-            currentRank = current->getRank();
-            if (rank[currentRank] == NULL) {
-                rank[currentRank] = current;
-            } else {
-                mergedNode = merge(current, rank[currentRank]);
-                if (mergedNode == current)
-                    root.remove(current);
-                else
-                    root.remove(rank[currentRank]);
+            done = false;
+            alreadyMoved = false;
+            while (!done) {
+                currentRank = current->getRank();
+                if (rank[currentRank] == NULL) {
+                    rank[currentRank] = current;
+                    done = true;
+                } else {
+                    mergedNode = merge(current, rank[currentRank]);
+                    if (mergedNode == current) {
+                        root.remove(rank[currentRank]);
+                    }
+                    else {
+                        if (*it == current) {
+                            alreadyMoved = true;
+                            it++;
+                        }
+                        root.remove(current);
+                    }
+                    current = mergedNode;
+                    rank[currentRank] = NULL;
+                }
             }
+            if (!alreadyMoved)
+                it++;
         }
     }
 
@@ -108,7 +130,13 @@ public:
     void printFBHeap() {
 
         for (NodeList_t::iterator it = root.begin(); it != root.end(); ++it ) {
-            std::cout << (*it)->key << "\n";
+            (*it)->printNode("");
+            //std::cout << (*it)->key << "\n";
+            //if ((*it)->key == 3)
+            //    it = root.erase(it);
+            //std::advance(it, 1);
+            //Node_t *temp = *it;
+            //root.remove(temp);
         }
     }
 };
@@ -122,7 +150,11 @@ int main() {
     FH.insert(6);
     FH.delete_min();
     FH.insert(3);
+    FH.insert(4);
     FH.insert(9);
+    FH.insert(1);
+    FH.insert(5);
+    FH.delete_min();
     
     FH.printFBHeap();
     return 0;
