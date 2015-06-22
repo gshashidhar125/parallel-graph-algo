@@ -12,17 +12,27 @@
 
 #ifdef DEBUG
 #define print(...) printf(__VA_ARGS__)
+#define dump cout
 #else
 #define print(...) ;
+#define dump null_stream
+#define Cuda_dump Cuda_null_stream
 #endif
 
-#define outs(...) print(__VA_ARGS__)
+#define outs(...) printf(__VA_ARGS__)
+#define out cout
 
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 200)
   # error printf is only supported on devices of compute capability 2.0 and higher, please compile with -arch=sm_20 or higher
 #endif
 
 using namespace std;
+
+class NullBuffer : public std::streambuf
+{
+public:
+  int overflow(int c) { return c; }
+};
 
 class CudaGraphClass {
 
@@ -55,7 +65,7 @@ public:
 
     void populate(char *fileName);
     void printGraph();
-    void callSSSP();
+    int callSSSP();
     int copyGraphToDevice();
 };
 //#endif
