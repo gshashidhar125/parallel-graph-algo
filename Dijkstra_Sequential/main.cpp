@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <time.h>
+#include <stdlib.h>
 #include <list>
 
 class Node_t;
@@ -75,7 +77,7 @@ public:
 
     void meld() {
 
-        Node_t *rank[100] = {};
+        Node_t *rank[1000] = {};
         Node_t *current, *mergedNode;
         int i = 0, currentRank;
         bool done, alreadyMoved;
@@ -144,6 +146,8 @@ public:
 int main() {
 
     FibHeap FH;
+
+#ifdef TEST
     FH.insert(8);
     FH.delete_min();
     FH.insert(4);
@@ -155,7 +159,25 @@ int main() {
     FH.insert(1);
     FH.insert(5);
     FH.delete_min();
-    
+#elif RANDOM
+
+    srand(time(NULL));
+    int count1 = 0, count2 = 0;
+    for (int i = 0; i < 1000; i++) {
+
+        //std::cout << rand() % 10 << "\n";
+        if (rand() % 10 < 6) {
+            FH.insert(rand() % 1000);
+            count1++;
+//            std::cout << "Insert\n";
+        }else {
+            FH.delete_min();
+            count2++;
+//            std::cout << "  Delete\n";
+        }
+    }
+#endif
     FH.printFBHeap();
+    std::cout << "Count: " << count1 << " - " << count2 << "\n";
     return 0;
 }
