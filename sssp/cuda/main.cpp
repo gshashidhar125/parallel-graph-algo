@@ -7,6 +7,8 @@
 using namespace std;
 
 class parallelSSSP;
+NullBuffer null_buffer;
+std::ostream null_stream(&null_buffer);
 
 int main(int argc, char *argv[]) {
 
@@ -23,6 +25,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    dump << "Nothing will be printed";
     int numNodes, numEdges;
     inputFile >> numNodes >> numEdges;
     CudaGraphClass graph(numNodes, numEdges);

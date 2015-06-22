@@ -11,20 +11,18 @@ if( err != cudaSuccess) { \
 
 using namespace std;
 
-__device__ int *graph[3], d_numVertices, d_numEdges, *worklist, d_tail;
-__device__ int *edgeArray[2];
-__device__ int *distance;
+__device__ int *graph[3], d_numVertices, d_numEdges, *d_worklist, d_tail;
 __device__ bool d_terminate;
-__global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArray, int *distanceArray, int numVertices, int numEdges) {
+
+__global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArray, int *worklist, int numVertices, int numEdges) {
 
     d_numVertices = numVertices;
     d_numEdges = numEdges;
     graph[0] = vertexArray;
-    printf("Vertex Array Pointer: %p\n", vertexArray);
     graph[1] = edgeArray;
-    printf("graph[0] Pointer: %p\n", graph[0]);
     graph[2] = weightArray;
-    distance = distanceArray;
+    d_worklist = worklist;
+    d_worklist[1] = 1;
 }
 __global__ void CudaPrintGraph() {
 
@@ -43,17 +41,19 @@ __global__ void Cuda_SSSP() {
     if (tId > d_numEdges)
         return;
 
-    // Edge (u, v)
-    v = edgeArray[tId];
 }
 
-void CudaGraphClass::callSSSP() {
+int CudaGraphClass::callSSSP() {
 
-    print("Hello inside cuda code\n");
-    //copyGraphToDevice();
-    //printGraph();
-    
-    int terminate = false;
+    int terminate = false, *distance, *d_distance;
+    cudaError_t err;
+
+    distance = new int[(numVertices + 1)];
+    err = cudaMalloc((void **)&d_distance, (numVertices + 1) * sizeof(int));
+    CUDA_ERR_CHECK;
+    err = cudaMemset(d_distance, 0xff, (numVertices + 1) * sizeof(int));
+    CUDA_ERR_CHECK;
+
     while (terminate == false) {
         terminate = true;
 //        outs("Queue: Head: %d, Tail: %d\n", currentQueueHead, currentQueueTail);
@@ -63,10 +63,18 @@ void CudaGraphClass::callSSSP() {
         cudaThreadSynchronize();
         cudaMemcpyFromSymbol(&terminate, d_terminate, sizeof(bool), 0, cudaMemcpyDeviceToHost);
     }
+
+    err = cudaMemcpy(distance, d_distance, (numVertices + 1) * sizeof(int), cudaMemcpyDeviceToHost);
+    CUDA_ERR_CHECK;
+    out << "Distances:\n";
+    for (int i = 0; i <= numVertices + 1; i++)
+        out << "["<< i << "] = " << distance[i] << endl;
+
+    return 0;
 }
 int CudaGraphClass::copyGraphToDevice() {
 
-    int *vertexArray, *edgeArray, *weightArray, *distanceArray;
+    int *vertexArray, *edgeArray, *weightArray, *worklist;
     cudaError_t err;
     err = cudaMalloc((void **)&vertexArray, (numVertices + 2) * sizeof(int));
     CUDA_ERR_CHECK;
@@ -74,7 +82,7 @@ int CudaGraphClass::copyGraphToDevice() {
     CUDA_ERR_CHECK;
     err = cudaMalloc((void **)&weightArray, (numEdges + 1) * sizeof(int));
     CUDA_ERR_CHECK;
-    err = cudaMalloc((void **)&distanceArray, (numVertices + 1) * sizeof(int));
+    err = cudaMalloc((void **)&worklist, (numVertices + 2) * sizeof(int));
     CUDA_ERR_CHECK;
     err = cudaMemcpy(vertexArray, row[0], (numVertices + 2) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
@@ -82,8 +90,7 @@ int CudaGraphClass::copyGraphToDevice() {
     CUDA_ERR_CHECK;
     err = cudaMemcpy(weightArray, row[2], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
-    printf("Allocation site. Vertex Array Pointer: %p\n", vertexArray);
-    CudaInitialize<<<1, 1>>>(vertexArray, edgeArray, weightArray, distanceArray, numVertices, numEdges);
+    CudaInitialize<<<1, 1>>>(vertexArray, edgeArray, weightArray, worklist, numVertices, numEdges);
     cudaThreadSynchronize();
     return 0;
 }
@@ -106,6 +113,7 @@ void CudaGraphClass::populate(char *fileName) {
     i = numEdges;
     int lastj = 1, currentIndex = 1;
     inputFile >> j >> k;
+    srand(time(NULL));
     while(i) {
 
         //scanf("%d %d", &j, &k);
@@ -122,7 +130,8 @@ void CudaGraphClass::populate(char *fileName) {
             lastj++;
         }
 //        if (AdjMatrix[k][j] != 1)
-            row[1][currentIndex] = k;
+        row[1][currentIndex] = k;
+        row[2][currentIndex] = (rand() % 2) ? rand() % 10 - 10 : rand() % 10;
         currentIndex ++;
         i--;
     }
