@@ -11,10 +11,12 @@ if( err != cudaSuccess) { \
 
 using namespace std;
 
-__device__ int *graph[3], d_numVertices, d_numEdges, *d_worklist, d_tail;
+__device__ int *graph[3], d_numVertices, d_numEdges, *d_worklist, d_worklistLength;
+__device__ int *d_inputPrefixSum, *d_prefixSum;
+__device__ int d_prefixLevel;
 __device__ bool d_terminate;
 
-__global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArray, int *worklist, int numVertices, int numEdges) {
+__global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArray, int *worklist, int *inputPrefixSum, int *prefixSum, int numVertices, int numEdges) {
 
     d_numVertices = numVertices;
     d_numEdges = numEdges;
@@ -22,7 +24,23 @@ __global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArra
     graph[1] = edgeArray;
     graph[2] = weightArray;
     d_worklist = worklist;
-    d_worklist[1] = 1;
+    d_inputPrefixSum = inputPrefixSum;
+    d_prefixSum = prefixSum;
+    d_worklist[0] = 1;
+    d_worklist[1] = 3;
+    d_worklist[2] = 4;
+    d_worklist[3] = 5;
+    d_worklist[4] = 6;
+    d_worklist[5] = 9;
+    d_worklist[6] = 8;
+    d_worklist[7] = 7;
+    d_worklist[8] = 10;
+    d_worklist[9] = 11;
+    d_worklistLength = 10;
+    d_inputPrefixSum[numVertices + 1] = 0;
+    d_inputPrefixSum[numVertices + 2] = 0;
+    d_prefixSum[numVertices + 1] = 0;
+    d_prefixSum[numVertices + 2] = 0;
 }
 __global__ void CudaPrintGraph() {
 
@@ -37,10 +55,36 @@ __global__ void CudaPrintGraph() {
 }
 __global__ void Cuda_SSSP() {
     
-    int tId = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tId > d_numEdges)
-        return;
-
+    int vertex, numNeighbours, tId = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tId < d_worklistLength) {
+        vertex = d_worklist[tId];
+        numNeighbours = graph[0][vertex + 1] - graph[0][vertex];
+        d_inputPrefixSum[tId] = numNeighbours;
+        // PrefixScan()
+        int index = tId, add = 1;
+        while (2 * index + add < d_worklistLength) {
+            d_inputPrefixSum[2 * index] += d_inputPrefixSum[2 * index + add];
+            index = index << 1;
+            add = add << 1;
+        }
+        if (tId == 0) {
+            d_prefixLevel = add;
+        }
+        __syncthreads();
+        int level;
+        level = d_prefixLevel;
+        index = tId * d_prefixLevel;
+        print("Cuda: Thread = %d, index = %d, add = %d, level = %d\n", tId, index, add, level);
+        while (level != 0) {
+            if (index < d_worklistLength) {
+                d_inputPrefixSum[index] -= d_inputPrefixSum[index + level / 2];
+                d_prefixSum[index + level / 2] = d_inputPrefixSum[index] + d_prefixSum[index];
+            }
+            __syncthreads();
+            index = index >> 1;
+            level = level >> 1;
+        }
+    }
 }
 
 int CudaGraphClass::callSSSP() {
@@ -56,25 +100,37 @@ int CudaGraphClass::callSSSP() {
 
     while (terminate == false) {
         terminate = true;
-//        outs("Queue: Head: %d, Tail: %d\n", currentQueueHead, currentQueueTail);
         cudaMemcpyToSymbol(d_terminate, &terminate, sizeof(bool), 0, cudaMemcpyHostToDevice);
-//        cudaMemcpyToSymbol(d_tail, &tail, sizeof(bool), 0, cudaMemcpyHostToDevice);
+        CUDA_ERR_CHECK;
         Cuda_SSSP<<<2, 5>>>();
+        CUDA_ERR_CHECK;
         cudaThreadSynchronize();
         cudaMemcpyFromSymbol(&terminate, d_terminate, sizeof(bool), 0, cudaMemcpyDeviceToHost);
+        CUDA_ERR_CHECK;
     }
 
-    err = cudaMemcpy(distance, d_distance, (numVertices + 1) * sizeof(int), cudaMemcpyDeviceToHost);
+    int *inputPrefixSum;
+    cudaMemcpyFromSymbol(&inputPrefixSum, d_inputPrefixSum, sizeof(int *), 0, cudaMemcpyDeviceToHost);
     CUDA_ERR_CHECK;
-    out << "Distances:\n";
+    err = cudaMemcpy(distance, inputPrefixSum, (numVertices + 1) * sizeof(int), cudaMemcpyDeviceToHost);
+    CUDA_ERR_CHECK;
+/*    out << "Distances:\n";
     for (int i = 0; i <= numVertices + 1; i++)
         out << "["<< i << "] = " << distance[i] << endl;
-
+*/
+    out << "Prefix Sums\n";
+    cudaMemcpyFromSymbol(&inputPrefixSum, d_prefixSum, sizeof(int *), 0, cudaMemcpyDeviceToHost);
+    CUDA_ERR_CHECK;
+    err = cudaMemcpy(distance, inputPrefixSum, (numVertices + 1) * sizeof(int), cudaMemcpyDeviceToHost);
+    CUDA_ERR_CHECK;
+    for (int i = 0; i <= numVertices + 1; i++)
+        out << "["<< i << "] = " << distance[i] << endl;
     return 0;
 }
 int CudaGraphClass::copyGraphToDevice() {
 
     int *vertexArray, *edgeArray, *weightArray, *worklist;
+    int *inputPrefixSum, *prefixSum;
     cudaError_t err;
     err = cudaMalloc((void **)&vertexArray, (numVertices + 2) * sizeof(int));
     CUDA_ERR_CHECK;
@@ -84,13 +140,21 @@ int CudaGraphClass::copyGraphToDevice() {
     CUDA_ERR_CHECK;
     err = cudaMalloc((void **)&worklist, (numVertices + 2) * sizeof(int));
     CUDA_ERR_CHECK;
+    err = cudaMalloc((void **)&inputPrefixSum, (numVertices + 2) * sizeof(int));
+    CUDA_ERR_CHECK;
+    err = cudaMalloc((void **)&prefixSum, (numVertices + 2) * sizeof(int));
+    CUDA_ERR_CHECK;
+    err = cudaMemset(inputPrefixSum, 0x0, (numVertices + 1) * sizeof(int));
+    CUDA_ERR_CHECK;
+    err = cudaMemset(prefixSum, 0x0, (numVertices + 1) * sizeof(int));
+    CUDA_ERR_CHECK;
     err = cudaMemcpy(vertexArray, row[0], (numVertices + 2) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
     err = cudaMemcpy(edgeArray, row[1], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
     err = cudaMemcpy(weightArray, row[2], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
-    CudaInitialize<<<1, 1>>>(vertexArray, edgeArray, weightArray, worklist, numVertices, numEdges);
+    CudaInitialize<<<1, 1>>>(vertexArray, edgeArray, weightArray, worklist, inputPrefixSum, prefixSum, numVertices, numEdges);
     cudaThreadSynchronize();
     return 0;
 }
@@ -103,7 +167,6 @@ void CudaGraphClass::populate(char *fileName) {
         return;
     }
 
-    cout << numVertices << "--" << numEdges << endl;
     int **AdjMatrix, i, j, k;
     AdjMatrix = new int* [numVertices + 1]();
     for (i = 0; i <= numVertices; i++) {
@@ -111,17 +174,16 @@ void CudaGraphClass::populate(char *fileName) {
         AdjMatrix[i] = new int [numVertices + 1]();
     }
     i = numEdges;
-    int lastj = 1, currentIndex = 1;
+    int lastj = 0, currentIndex = 0;
     inputFile >> j >> k;
     srand(time(NULL));
-    while(i) {
+    while(i > 0) {
 
         //scanf("%d %d", &j, &k);
         inputFile >> j >> k;
-        cout << "Read: " << j << "-- " << k;
         AdjMatrix[j][k] = 1;
-        while (lastj <= j || lastj == 1) {
-            if (lastj == 1) {
+        while (lastj <= j || lastj == 0) {
+            if (lastj == 0) {
                 row[0][0] = currentIndex;
                 row[0][1] = currentIndex;
             }else {
@@ -135,20 +197,20 @@ void CudaGraphClass::populate(char *fileName) {
         currentIndex ++;
         i--;
     }
-    row[1][0] = 0;
+    //row[1][0] = 0;
     // Sentinel node just points to the end of the last node in the graph
     while (lastj <= numVertices + 1) {
         row[0][lastj] = currentIndex;
         lastj++;
     }
     //row[0][lastj+1] = currentIndex;
-    for (i = 1; i <= numVertices + 1; i++)
+/*    for (i = 0; i <= numVertices + 1; i++)
         print("Vertex: %d = %d\n", i, row[0][i]);
 
     print("Second Array:\n");
-    for (i = 1; i <= numEdges; i++)
+    for (i = 0; i <= numEdges; i++)
         print("Edges: Index: %d, Value = %d\n", i, row[1][i]);
-
+*/
     j = 1;
     for (i = 1; i <= numVertices; i++) {
 

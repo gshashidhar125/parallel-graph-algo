@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    dump << "Nothing will be printed";
+    //dump << "Nothing will be printed";
     int numNodes, numEdges;
     inputFile >> numNodes >> numEdges;
     CudaGraphClass graph(numNodes, numEdges);
@@ -33,7 +33,8 @@ int main(int argc, char *argv[]) {
     graph.populate(argv[1]);
     graph.copyGraphToDevice();
 
-    graph.printGraph();
+    //graph.printGraph();
+    //std::cout << "Main function\n";
 
     graph.callSSSP();
     return 0;
