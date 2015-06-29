@@ -26,7 +26,12 @@ __global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArra
     d_worklist = worklist;
     d_inputPrefixSum = inputPrefixSum;
     d_prefixSum = prefixSum;
-    d_worklist[0] = 1;
+    for (int i = 0; i < numVertices; i++) {
+        d_worklist[i] = i;
+    }
+    d_worklistLength = d_numVertices;
+    print("WLLenght = %d, numVertices = %d\n", d_worklistLength, d_numVertices);
+/*    d_worklist[0] = 1;
     d_worklist[1] = 3;
     d_worklist[2] = 4;
     d_worklist[3] = 5;
@@ -36,7 +41,7 @@ __global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArra
     d_worklist[7] = 7;
     d_worklist[8] = 10;
     d_worklist[9] = 11;
-    d_worklistLength = 10;
+    d_worklistLength = 10;*/
     d_inputPrefixSum[numVertices + 1] = 0;
     d_inputPrefixSum[numVertices + 2] = 0;
     d_prefixSum[numVertices + 1] = 0;
@@ -71,10 +76,15 @@ __global__ void Cuda_SSSP() {
             d_prefixLevel = add;
         }
         __syncthreads();
-        int level;
+    }
+}
+__global__ void Cuda_PrefixSum() {
+    int tId = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tId < d_worklistLength) {
+        int level, index;
         level = d_prefixLevel;
         index = tId * d_prefixLevel;
-        print("Cuda: Thread = %d, index = %d, add = %d, level = %d\n", tId, index, add, level);
+        print("Cuda: Thread = %d, index = %d, level = %d\n", tId, index, level);
         while (level != 0) {
             if (index < d_worklistLength) {
                 d_inputPrefixSum[index] -= d_inputPrefixSum[index + level / 2];
@@ -97,12 +107,18 @@ int CudaGraphClass::callSSSP() {
     CUDA_ERR_CHECK;
     err = cudaMemset(d_distance, 0xff, (numVertices + 1) * sizeof(int));
     CUDA_ERR_CHECK;
+    int numThreadsPerBlock = 1024;
+    int numBlocksPerGrid = (numVertices + 1 + numThreadsPerBlock - 1) / numThreadsPerBlock;
+    cout << numThreadsPerBlock << ", " << numBlocksPerGrid << "\n";
 
     while (terminate == false) {
         terminate = true;
         cudaMemcpyToSymbol(d_terminate, &terminate, sizeof(bool), 0, cudaMemcpyHostToDevice);
         CUDA_ERR_CHECK;
-        Cuda_SSSP<<<2, 5>>>();
+        Cuda_SSSP<<<numBlocksPerGrid, numThreadsPerBlock>>>();
+        CUDA_ERR_CHECK;
+        cudaThreadSynchronize();
+        Cuda_PrefixSum<<<numBlocksPerGrid, numThreadsPerBlock>>>();
         CUDA_ERR_CHECK;
         cudaThreadSynchronize();
         cudaMemcpyFromSymbol(&terminate, d_terminate, sizeof(bool), 0, cudaMemcpyDeviceToHost);
@@ -110,11 +126,11 @@ int CudaGraphClass::callSSSP() {
     }
 
     int *inputPrefixSum;
-    cudaMemcpyFromSymbol(&inputPrefixSum, d_inputPrefixSum, sizeof(int *), 0, cudaMemcpyDeviceToHost);
+/*    cudaMemcpyFromSymbol(&inputPrefixSum, d_inputPrefixSum, sizeof(int *), 0, cudaMemcpyDeviceToHost);
     CUDA_ERR_CHECK;
     err = cudaMemcpy(distance, inputPrefixSum, (numVertices + 1) * sizeof(int), cudaMemcpyDeviceToHost);
     CUDA_ERR_CHECK;
-/*    out << "Distances:\n";
+    out << "Distances:\n";
     for (int i = 0; i <= numVertices + 1; i++)
         out << "["<< i << "] = " << distance[i] << endl;
 */
@@ -125,8 +141,33 @@ int CudaGraphClass::callSSSP() {
     CUDA_ERR_CHECK;
     for (int i = 0; i <= numVertices + 1; i++)
         out << "["<< i << "] = " << distance[i] << endl;
+
+    verifyPrefixSum(distance);
     return 0;
 }
+
+int CudaGraphClass::verifyPrefixSum(int *calculatedPrefix) {
+    
+    int *verifiedPrefix, prefix = 0;
+    verifiedPrefix = new int[(numVertices + 1)];
+    for (int vertex = 0; vertex < numVertices; vertex++) {
+        verifiedPrefix[vertex] = prefix;
+        int numNeighbours = row[0][vertex + 1] - row[0][vertex];
+        prefix += numNeighbours;
+    }
+    /*for (int vertex = 0; vertex <= numVertices; vertex++) {
+        print("Prefix[%d] = %d\n", vertex, verifiedPrefix[vertex]);
+    }*/
+    for (int vertex = 0; vertex < numVertices; vertex++) {
+        if (verifiedPrefix[vertex] != calculatedPrefix[vertex]) {
+            print("Verification failed at vertex %d.\n", vertex);
+            print("Verified prefix = %d. Calculated prefix = %d\n", verifiedPrefix[vertex], calculatedPrefix[vertex]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int CudaGraphClass::copyGraphToDevice() {
 
     int *vertexArray, *edgeArray, *weightArray, *worklist;

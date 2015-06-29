@@ -67,5 +67,6 @@ public:
     void printGraph();
     int callSSSP();
     int copyGraphToDevice();
+    int verifyPrefixSum(int *);
 };
 //#endif
