@@ -30,8 +30,11 @@ int main(int argc, char *argv[]) {
     inputFile >> numNodes >> numEdges;
     CudaGraphClass graph(numNodes, numEdges);
 
+    cout << "Graph Population began\n";
     graph.populate(argv[1]);
+    cout << "Graph Population end\n";
     graph.copyGraphToDevice();
+    cout << "Copy graph end\n";
 
     //graph.printGraph();
     //std::cout << "Main function\n";

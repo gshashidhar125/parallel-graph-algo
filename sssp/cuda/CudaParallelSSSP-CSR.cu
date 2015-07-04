@@ -12,11 +12,11 @@ if( err != cudaSuccess) { \
 using namespace std;
 
 __device__ int *graph[3], d_numVertices, d_numEdges, *d_worklist, d_worklistLength;
-__device__ int *d_inputPrefixSum, *d_prefixSum;
-__device__ int d_prefixLevel;
+__device__ int *d_inputPrefixSum, *d_prefixSum, *d_blockPrefixSum;
+__device__ int *d_prefixLevel;
 __device__ bool d_terminate;
 
-__global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArray, int *worklist, int *inputPrefixSum, int *prefixSum, int numVertices, int numEdges) {
+__global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArray, int *worklist, int *inputPrefixSum, int *prefixSum, int *blockPrefixSum, int numVertices, int numEdges) {
 
     d_numVertices = numVertices;
     d_numEdges = numEdges;
@@ -26,22 +26,12 @@ __global__ void CudaInitialize(int *vertexArray, int *edgeArray, int *weightArra
     d_worklist = worklist;
     d_inputPrefixSum = inputPrefixSum;
     d_prefixSum = prefixSum;
+    d_blockPrefixSum = blockPrefixSum;
     for (int i = 0; i < numVertices; i++) {
         d_worklist[i] = i;
     }
     d_worklistLength = d_numVertices;
     print("WLLenght = %d, numVertices = %d\n", d_worklistLength, d_numVertices);
-/*    d_worklist[0] = 1;
-    d_worklist[1] = 3;
-    d_worklist[2] = 4;
-    d_worklist[3] = 5;
-    d_worklist[4] = 6;
-    d_worklist[5] = 9;
-    d_worklist[6] = 8;
-    d_worklist[7] = 7;
-    d_worklist[8] = 10;
-    d_worklist[9] = 11;
-    d_worklistLength = 10;*/
     d_inputPrefixSum[numVertices + 1] = 0;
     d_inputPrefixSum[numVertices + 2] = 0;
     d_prefixSum[numVertices + 1] = 0;
@@ -60,24 +50,108 @@ __global__ void CudaPrintGraph() {
 }
 __global__ void Cuda_SSSP() {
     
-    int vertex, numNeighbours, tId = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tId < d_worklistLength) {
-        vertex = d_worklist[tId];
+    extern __shared__ int temp[];
+    __shared__ int blockPrefixSum;
+    int vertex, maxLength, numNeighbours, tId = threadIdx.x;
+    if ((d_worklistLength - blockIdx.x * 1024) < 1024)
+        maxLength = d_worklistLength - blockIdx.x * 1024;
+    else
+        maxLength = 1024;
+    if (blockIdx.x * blockDim.x + tId < d_worklistLength) {
+        vertex = d_worklist[blockIdx.x * blockDim.x + tId];
         numNeighbours = graph[0][vertex + 1] - graph[0][vertex];
-        d_inputPrefixSum[tId] = numNeighbours;
-        // PrefixScan()
+        temp[tId] = numNeighbours;
+    }
+    //print("This is a thread : %d. Max = %d\n", threadIdx.x, maxLength);
+    __syncthreads();
+    // PrefixScan()
+    int index =  2 * tId, add = 1;
+    for (int depth = maxLength >> 1; depth > 0; depth = depth >> 1) {
+        //while ((2 * index + add < maxLength) && (add <= 2)) {
+        if (index + add < maxLength) {
+            temp[index] += temp[index + add];
+            index = index << 1;
+            add = add << 1;
+        }
+        print("Level: %d Before\n", depth);
+        __syncthreads();
+        print("Level: %d After\n", depth);
+    }
+        /*if (tId == 0) {
+            d_prefixLevel[blockIdx.x] = add;
+            blockPrefixSum = temp[0];
+        }*/
+        //d_inputPrefixSum[blockIdx.x * blockDim.x + tId] = temp[tId];
+    
+    __syncthreads();
+    if (tId < d_worklistLength)
+        d_prefixSum[tId] = temp[tId];
+/*    if (blockIdx.x * blockDim.x + tId < d_worklistLength) {
+        int level, index;
+        level = d_prefixLevel[blockIdx.x];
+        index = tId * level;
+        //print("Cuda: Thread = %d, index = %d, level = %d\n", tId, index, level);
+        while (level != 0) {
+            if (index + level / 2 < maxLength) {
+                temp[index] -= temp[index + level / 2];
+                d_prefixSum[blockIdx.x * blockDim.x + index + level / 2] = temp[index] + d_prefixSum[blockIdx.x * blockDim.x + index];
+            }
+            __syncthreads();
+            index = index >> 1;
+            level = level >> 1;
+        }
+        if (tId == 0) {
+            d_prefixLevel[blockIdx.x] = blockPrefixSum;
+            print("Block %d. PrefixSum = %d, Array Value = %d\n", blockIdx.x, blockPrefixSum, d_prefixLevel[blockIdx.x]);
+        }
+    }*/
+}
+
+__global__ void Cuda_BlockPrefixSum(int numBlocks) {
+    
+    int tId = threadIdx.x;
+    extern __shared__ int temp[];
+    if (tId < numBlocks) {
         int index = tId, add = 1;
-        while (2 * index + add < d_worklistLength) {
-            d_inputPrefixSum[2 * index] += d_inputPrefixSum[2 * index + add];
+        temp[tId] = d_prefixLevel[tId];
+        //print("BEFORE Temp BlockPrefixSum[%d] = %d\n", tId, temp[tId]);
+        while (2 * index + add < numBlocks) {
+            temp[2 * index] += temp[2 * index + add];
             index = index << 1;
             add = add << 1;
         }
         if (tId == 0) {
-            d_prefixLevel = add;
+            d_prefixLevel[blockIdx.x] = add;
         }
-        __syncthreads();
+    }
+    __syncthreads();
+    if (tId < numBlocks) {
+        //print("AFTER Temp BlockPrefixSum[%d] = %d\n", tId, temp[tId]);
+        int level, index;
+        level = d_prefixLevel[blockIdx.x];
+        index = tId * level;
+        while (level != 0) {
+        //print("BLOCK PREFIX Cuda: Thread = %d, index = %d, level = %d\n", tId, index, level);
+            if (index + level / 2 < numBlocks) {
+                temp[index] -= temp[index + level / 2];
+                d_blockPrefixSum[blockIdx.x * blockDim.x + index + level /2] = temp[index] + d_blockPrefixSum[blockIdx.x * blockDim.x + index];
+            }
+            __syncthreads();
+            index = index >> 1;
+            level = level >> 1;
+        }
+        //print("BlockPrefixSum[%d] = %d\n", tId, d_blockPrefixSum[tId]);
     }
 }
+
+__global__ void Cuda_AddBlockPrefix() {
+
+    int tId = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tId < d_worklistLength) {
+        d_prefixSum[tId] += d_blockPrefixSum[blockIdx.x];
+    }
+}
+/*
 __global__ void Cuda_PrefixSum() {
     int tId = blockIdx.x * blockDim.x + threadIdx.x;
     if (tId < d_worklistLength) {
@@ -95,11 +169,11 @@ __global__ void Cuda_PrefixSum() {
             level = level >> 1;
         }
     }
-}
+}*/
 
 int CudaGraphClass::callSSSP() {
 
-    int terminate = false, *distance, *d_distance;
+    int terminate = false, *distance, *d_distance, *prefixLevel;
     cudaError_t err;
 
     distance = new int[(numVertices + 1)];
@@ -111,16 +185,42 @@ int CudaGraphClass::callSSSP() {
     int numBlocksPerGrid = (numVertices + 1 + numThreadsPerBlock - 1) / numThreadsPerBlock;
     cout << numThreadsPerBlock << ", " << numBlocksPerGrid << "\n";
 
+    err = cudaMalloc((void **)&prefixLevel, numBlocksPerGrid * sizeof(int));
+    CUDA_ERR_CHECK;
+    cudaMemcpyToSymbol(d_prefixLevel, &prefixLevel, sizeof(int *), 0, cudaMemcpyHostToDevice);
+    CUDA_ERR_CHECK;
+
     while (terminate == false) {
         terminate = true;
         cudaMemcpyToSymbol(d_terminate, &terminate, sizeof(bool), 0, cudaMemcpyHostToDevice);
+       CUDA_ERR_CHECK;
+       cudaError_t cudaerr = cudaDeviceSynchronize();
+       if (cudaerr != cudaSuccess)
+           printf("kernel launch failed with error \"%s\".\n",
+                  cudaGetErrorString(cudaerr));
+        print("____________________");
+        Cuda_SSSP<<<numBlocksPerGrid, numThreadsPerBlock, numThreadsPerBlock * sizeof(int)>>>();
         CUDA_ERR_CHECK;
-        Cuda_SSSP<<<numBlocksPerGrid, numThreadsPerBlock>>>();
+        cudaPeekAtLastError();
         CUDA_ERR_CHECK;
-        cudaThreadSynchronize();
-        Cuda_PrefixSum<<<numBlocksPerGrid, numThreadsPerBlock>>>();
+        //cudaThreadSynchronize();
+        cudaerr = cudaDeviceSynchronize();
+        if (cudaerr != cudaSuccess)
+            printf("kernel launch failed with error \"%s\".\n",
+                   cudaGetErrorString(cudaerr));
+        print("#####################");
+/*        Cuda_BlockPrefixSum<<<(numBlocksPerGrid + numThreadsPerBlock) / numThreadsPerBlock, numThreadsPerBlock, numBlocksPerGrid * sizeof(int )>>>(numBlocksPerGrid);
         CUDA_ERR_CHECK;
-        cudaThreadSynchronize();
+        cudaPeekAtLastError();
+        CUDA_ERR_CHECK;
+        cudaerr = cudaDeviceSynchronize();
+        if (cudaerr != cudaSuccess)
+            printf("kernel launch failed with error \"%s\".\n",
+                   cudaGetErrorString(cudaerr));
+*/        //cudaThreadSynchronize();
+/*        Cuda_AddBlockPrefix<<<numBlocksPerGrid, numThreadsPerBlock>>>();
+        CUDA_ERR_CHECK;
+        cudaThreadSynchronize();*/
         cudaMemcpyFromSymbol(&terminate, d_terminate, sizeof(bool), 0, cudaMemcpyDeviceToHost);
         CUDA_ERR_CHECK;
     }
@@ -171,7 +271,7 @@ int CudaGraphClass::verifyPrefixSum(int *calculatedPrefix) {
 int CudaGraphClass::copyGraphToDevice() {
 
     int *vertexArray, *edgeArray, *weightArray, *worklist;
-    int *inputPrefixSum, *prefixSum;
+    int *inputPrefixSum, *prefixSum, *blockPrefixSum;
     cudaError_t err;
     err = cudaMalloc((void **)&vertexArray, (numVertices + 2) * sizeof(int));
     CUDA_ERR_CHECK;
@@ -185,9 +285,15 @@ int CudaGraphClass::copyGraphToDevice() {
     CUDA_ERR_CHECK;
     err = cudaMalloc((void **)&prefixSum, (numVertices + 2) * sizeof(int));
     CUDA_ERR_CHECK;
+    int numThreadsPerBlock = 1024;
+    int numBlocksPerGrid = (numVertices + 1 + numThreadsPerBlock - 1) / numThreadsPerBlock;
+    err = cudaMalloc((void **)&blockPrefixSum, numBlocksPerGrid * sizeof(int));
+    CUDA_ERR_CHECK;
     err = cudaMemset(inputPrefixSum, 0x0, (numVertices + 1) * sizeof(int));
     CUDA_ERR_CHECK;
     err = cudaMemset(prefixSum, 0x0, (numVertices + 1) * sizeof(int));
+    CUDA_ERR_CHECK;
+    err = cudaMemset(blockPrefixSum, 0x0, numBlocksPerGrid * sizeof(int));
     CUDA_ERR_CHECK;
     err = cudaMemcpy(vertexArray, row[0], (numVertices + 2) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
@@ -195,7 +301,7 @@ int CudaGraphClass::copyGraphToDevice() {
     CUDA_ERR_CHECK;
     err = cudaMemcpy(weightArray, row[2], (numEdges + 1) * sizeof(int), cudaMemcpyHostToDevice);
     CUDA_ERR_CHECK;
-    CudaInitialize<<<1, 1>>>(vertexArray, edgeArray, weightArray, worklist, inputPrefixSum, prefixSum, numVertices, numEdges);
+    CudaInitialize<<<1, 1>>>(vertexArray, edgeArray, weightArray, worklist, inputPrefixSum, prefixSum, blockPrefixSum, numVertices, numEdges);
     cudaThreadSynchronize();
     return 0;
 }
@@ -260,13 +366,18 @@ void CudaGraphClass::populate(char *fileName) {
 //            print("%d %d\n", i, row[1][currentIndex]);
             if (AdjMatrix[i][row[1][currentIndex]] != 1 /*&&
                 AdjMatrix[row[1][currentIndex]][i] != 1*/) {
-                outs("\n\nGraph Do not Match\n\n");
+                outs("\n\nGraph Do not Match at [%d][%d]. CurrentIndex = %d\n\n", i, row[1][currentIndex], currentIndex);
                 break;
             }
             j++;
             currentIndex ++;
         }
     }
+    for (i = 0; i <= numVertices; i++) {
+
+        delete[] AdjMatrix[i];
+    }
+    delete[] AdjMatrix;
 }
 void CudaGraphClass::printGraph() {
     CudaPrintGraph<<<1, 1>>>();

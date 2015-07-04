@@ -23,4 +23,7 @@ int main() {
     printf("  Concurrent Kernels: %d\n", prop.concurrentKernels);
     printf("  L2 Cache Size: %d\n", prop.l2CacheSize);
   }
+  cudaError_t err;
+  int *edgeArray, numEdges = 4;
+  err = cudaMalloc((void **)&edgeArray, (numEdges + 1) * sizeof(int));
 }
