@@ -7,7 +7,9 @@
 if( err != cudaSuccess) { \
     printf("CUDA error: %s ** at Line %d\n", cudaGetErrorString(err), __LINE__); \
     return EXIT_FAILURE; \
-} \
+}
+#define CUDA_SET_DEVICE_ID \
+cudaSetDevice(0);
 
 using namespace std;
 
@@ -64,83 +66,76 @@ __global__ void Cuda_SSSP() {
     }
     //print("This is a thread : %d. Max = %d\n", threadIdx.x, maxLength);
     __syncthreads();
-    // PrefixScan()
     int index =  2 * tId, add = 1;
-    for (int depth = maxLength >> 1; depth > 0; depth = depth >> 1) {
-        //while ((2 * index + add < maxLength) && (add <= 2)) {
+    for (int depth = maxLength; depth > 0; depth = depth >> 1) {
         if (index + add < maxLength) {
             temp[index] += temp[index + add];
             index = index << 1;
             add = add << 1;
         }
-        print("Level: %d Before\n", depth);
         __syncthreads();
-        print("Level: %d After\n", depth);
     }
-        /*if (tId == 0) {
-            d_prefixLevel[blockIdx.x] = add;
-            blockPrefixSum = temp[0];
-        }*/
-        //d_inputPrefixSum[blockIdx.x * blockDim.x + tId] = temp[tId];
+    if (tId == 0) {
+        d_prefixLevel[blockIdx.x] = add;
+        blockPrefixSum = temp[0];
+        print("Level = %d. MaxLength = %d\n", d_prefixLevel[blockIdx.x], maxLength);
+    }
     
+    /*if (tId < d_worklistLength)
+        d_prefixSum[tId] = temp[tId];*/
+
     __syncthreads();
-    if (tId < d_worklistLength)
-        d_prefixSum[tId] = temp[tId];
-/*    if (blockIdx.x * blockDim.x + tId < d_worklistLength) {
-        int level, index;
-        level = d_prefixLevel[blockIdx.x];
-        index = tId * level;
-        //print("Cuda: Thread = %d, index = %d, level = %d\n", tId, index, level);
-        while (level != 0) {
-            if (index + level / 2 < maxLength) {
-                temp[index] -= temp[index + level / 2];
-                d_prefixSum[blockIdx.x * blockDim.x + index + level / 2] = temp[index] + d_prefixSum[blockIdx.x * blockDim.x + index];
-            }
-            __syncthreads();
-            index = index >> 1;
-            level = level >> 1;
+    int level;
+    level = d_prefixLevel[blockIdx.x];
+    index = tId * level;
+    for (int depth = maxLength; depth > 0; depth = depth >> 1) {
+        if (index + level / 2 < maxLength) {
+            temp[index] -= temp[index + level / 2];
+            d_prefixSum[blockIdx.x * blockDim.x + index + level / 2] = temp[index] + d_prefixSum[blockIdx.x * blockDim.x + index];
         }
-        if (tId == 0) {
-            d_prefixLevel[blockIdx.x] = blockPrefixSum;
-            print("Block %d. PrefixSum = %d, Array Value = %d\n", blockIdx.x, blockPrefixSum, d_prefixLevel[blockIdx.x]);
-        }
-    }*/
+        index = index >> 1;
+        level = level >> 1;
+        __syncthreads();
+    }
+    if (tId == 0) {
+        d_prefixLevel[blockIdx.x] = blockPrefixSum;
+        print("Block %d. PrefixSum = %d, Array Value = %d\n", blockIdx.x, blockPrefixSum, d_prefixLevel[blockIdx.x]);
+    }
 }
 
 __global__ void Cuda_BlockPrefixSum(int numBlocks) {
     
-    int tId = threadIdx.x;
     extern __shared__ int temp[];
-    if (tId < numBlocks) {
-        int index = tId, add = 1;
+    int tId = threadIdx.x;
+
+    if (tId < numBlocks)
         temp[tId] = d_prefixLevel[tId];
-        //print("BEFORE Temp BlockPrefixSum[%d] = %d\n", tId, temp[tId]);
-        while (2 * index + add < numBlocks) {
-            temp[2 * index] += temp[2 * index + add];
+
+    int index =  2 * tId, add = 1;
+    __shared__ int sharedVar;
+    for (int depth = numBlocks; depth > 0; depth = depth >> 1) {
+        if (index + add < numBlocks) {
+            temp[index] += temp[index + add];
             index = index << 1;
             add = add << 1;
         }
-        if (tId == 0) {
-            d_prefixLevel[blockIdx.x] = add;
-        }
+        __syncthreads();
     }
+    if (tId == 0)
+        sharedVar = add;
     __syncthreads();
-    if (tId < numBlocks) {
-        //print("AFTER Temp BlockPrefixSum[%d] = %d\n", tId, temp[tId]);
-        int level, index;
-        level = d_prefixLevel[blockIdx.x];
-        index = tId * level;
-        while (level != 0) {
-        //print("BLOCK PREFIX Cuda: Thread = %d, index = %d, level = %d\n", tId, index, level);
-            if (index + level / 2 < numBlocks) {
-                temp[index] -= temp[index + level / 2];
-                d_blockPrefixSum[blockIdx.x * blockDim.x + index + level /2] = temp[index] + d_blockPrefixSum[blockIdx.x * blockDim.x + index];
-            }
-            __syncthreads();
-            index = index >> 1;
-            level = level >> 1;
+    
+    int level;
+    level = sharedVar;
+    index = tId * level;
+    for (int depth = numBlocks; depth > 0; depth = depth >> 1) {
+        if (index + level / 2 < numBlocks) {
+            temp[index] -= temp[index + level / 2];
+            d_blockPrefixSum[blockIdx.x * blockDim.x + index + level / 2] = temp[index] + d_blockPrefixSum[blockIdx.x * blockDim.x + index];
         }
-        //print("BlockPrefixSum[%d] = %d\n", tId, d_blockPrefixSum[tId]);
+        index = index >> 1;
+        level = level >> 1;
+        __syncthreads();
     }
 }
 
@@ -151,25 +146,6 @@ __global__ void Cuda_AddBlockPrefix() {
         d_prefixSum[tId] += d_blockPrefixSum[blockIdx.x];
     }
 }
-/*
-__global__ void Cuda_PrefixSum() {
-    int tId = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tId < d_worklistLength) {
-        int level, index;
-        level = d_prefixLevel;
-        index = tId * d_prefixLevel;
-        print("Cuda: Thread = %d, index = %d, level = %d\n", tId, index, level);
-        while (level != 0) {
-            if (index < d_worklistLength) {
-                d_inputPrefixSum[index] -= d_inputPrefixSum[index + level / 2];
-                d_prefixSum[index + level / 2] = d_inputPrefixSum[index] + d_prefixSum[index];
-            }
-            __syncthreads();
-            index = index >> 1;
-            level = level >> 1;
-        }
-    }
-}*/
 
 int CudaGraphClass::callSSSP() {
 
@@ -209,7 +185,7 @@ int CudaGraphClass::callSSSP() {
             printf("kernel launch failed with error \"%s\".\n",
                    cudaGetErrorString(cudaerr));
         print("#####################");
-/*        Cuda_BlockPrefixSum<<<(numBlocksPerGrid + numThreadsPerBlock) / numThreadsPerBlock, numThreadsPerBlock, numBlocksPerGrid * sizeof(int )>>>(numBlocksPerGrid);
+        Cuda_BlockPrefixSum<<<(numBlocksPerGrid + numThreadsPerBlock) / numThreadsPerBlock, numThreadsPerBlock, numBlocksPerGrid * sizeof(int )>>>(numBlocksPerGrid);
         CUDA_ERR_CHECK;
         cudaPeekAtLastError();
         CUDA_ERR_CHECK;
@@ -217,10 +193,16 @@ int CudaGraphClass::callSSSP() {
         if (cudaerr != cudaSuccess)
             printf("kernel launch failed with error \"%s\".\n",
                    cudaGetErrorString(cudaerr));
-*/        //cudaThreadSynchronize();
-/*        Cuda_AddBlockPrefix<<<numBlocksPerGrid, numThreadsPerBlock>>>();
+        //cudaThreadSynchronize();
+        Cuda_AddBlockPrefix<<<numBlocksPerGrid, numThreadsPerBlock>>>();
         CUDA_ERR_CHECK;
-        cudaThreadSynchronize();*/
+        cudaPeekAtLastError();
+        CUDA_ERR_CHECK;
+        cudaerr = cudaDeviceSynchronize();
+        if (cudaerr != cudaSuccess)
+            printf("kernel launch failed with error \"%s\".\n",
+                   cudaGetErrorString(cudaerr));
+        //cudaThreadSynchronize();
         cudaMemcpyFromSymbol(&terminate, d_terminate, sizeof(bool), 0, cudaMemcpyDeviceToHost);
         CUDA_ERR_CHECK;
     }
@@ -237,6 +219,7 @@ int CudaGraphClass::callSSSP() {
     out << "Prefix Sums\n";
     cudaMemcpyFromSymbol(&inputPrefixSum, d_prefixSum, sizeof(int *), 0, cudaMemcpyDeviceToHost);
     CUDA_ERR_CHECK;
+    out << "Host Pointer : " << inputPrefixSum << "\n";
     err = cudaMemcpy(distance, inputPrefixSum, (numVertices + 1) * sizeof(int), cudaMemcpyDeviceToHost);
     CUDA_ERR_CHECK;
     for (int i = 0; i <= numVertices + 1; i++)
@@ -270,6 +253,7 @@ int CudaGraphClass::verifyPrefixSum(int *calculatedPrefix) {
 
 int CudaGraphClass::copyGraphToDevice() {
 
+    CUDA_SET_DEVICE_ID;
     int *vertexArray, *edgeArray, *weightArray, *worklist;
     int *inputPrefixSum, *prefixSum, *blockPrefixSum;
     cudaError_t err;

@@ -1,6 +1,6 @@
 .phony: clean edge_list csr
 
-NVCC_FLAGS = -g -G -lineinfo -Xcompiler -rdynamic
+NVCC_FLAGS = -g -G -arch=sm_20 -lineinfo -Xcompiler -rdynamic
 edge_list: cuda-SSSP_EdgeList.out
 	
 

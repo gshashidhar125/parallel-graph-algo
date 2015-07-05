@@ -23,7 +23,11 @@ int main() {
     printf("  Concurrent Kernels: %d\n", prop.concurrentKernels);
     printf("  L2 Cache Size: %d\n", prop.l2CacheSize);
   }
-  cudaError_t err;
+  /*cudaError_t err;
   int *edgeArray, numEdges = 4;
   err = cudaMalloc((void **)&edgeArray, (numEdges + 1) * sizeof(int));
+    if( err != cudaSuccess) {
+        printf("CUDA error: %s ** at Line %d\n", cudaGetErrorString(err), __LINE__);
+        return EXIT_FAILURE;
+    }*/
 }
