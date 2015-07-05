@@ -1,0 +1,6 @@
+1. To know all branches in the remote repository.
+    git branch -r
+2. To track a local branch.
+    git push -u origin <branchName>
+    or
+    git checkout --track -b origin/<branchName>
