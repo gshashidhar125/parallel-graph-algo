@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     //dump << "Nothing will be printed";
     int numNodes, numEdges;
     inputFile >> numNodes >> numEdges;
-    CudaGraphClass graph(numNodes, numEdges);
+    CudaGraphClass graph(numNodes, numEdges, 1024);
 
     cout << "Graph Population began\n";
     graph.populate(argv[1]);

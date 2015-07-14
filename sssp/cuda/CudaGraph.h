@@ -39,6 +39,8 @@ class CudaGraphClass {
 public:
 //private:
     int numVertices, numEdges;
+    int numThreadsPerBlock; 
+    int maxWorklistLength, maxNumBlocksPerGrid;
     int *row[3];
     ifstream inputFile;
 
@@ -46,9 +48,13 @@ public:
         numVertices = 0;
         numEdges = 0;
     }
-    CudaGraphClass(int vertices, int edges) {
+    CudaGraphClass(int vertices, int edges, int threadsPerBlock) {
         numVertices = vertices;
         numEdges = edges;
+        numThreadsPerBlock = threadsPerBlock;
+        //numBlocksPerGrid = (numVertices + 1 + numThreadsPerBlock - 1) / numThreadsPerBlock;
+        maxWorklistLength = numVertices;
+        maxNumBlocksPerGrid = (numVertices + numThreadsPerBlock) / numThreadsPerBlock;
 
 #ifdef CUDA_CSR
 // NumVertices starting from 1 to NumVertices plus an addition Sentinel node
@@ -67,6 +73,10 @@ public:
     void printGraph();
     int callSSSP();
     int copyGraphToDevice();
+    int PrefixSum(int worklistLength, int *);
+    int gatherNeighbours(int);
     int verifyPrefixSum(int *);
+    int verifyGatherWorklist(int *, int);
+//    int reallocDeviceMemory(int *d_pointer, int newMemorySize);
 };
 //#endif
