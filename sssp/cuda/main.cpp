@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     graph.copyGraphToDevice();
     cout << "Copy graph end\n";
 
-    //graph.printGraph();
+    graph.printGraph();
     //std::cout << "Main function\n";
 
     graph.callSSSP();

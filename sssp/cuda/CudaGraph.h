@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+//#include <thrust/sort.h>
 
 #define DEBUG
 
@@ -77,6 +80,7 @@ public:
     int gatherNeighbours(int);
     int verifyPrefixSum(int *);
     int verifyGatherWorklist(int *, int);
+    int processNeighbours(int worklistLength);
 //    int reallocDeviceMemory(int *d_pointer, int newMemorySize);
 };
 //#endif
