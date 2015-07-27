@@ -6,3 +6,20 @@
     git checkout --track -b origin/<branchName>
 3. To create a local branch to track a remote branch
     git branch --track <local-branch-name> origin/<remote-branch-name>
+4. To create a repository on the server.
+    a. Make a directory in your server 
+        mkdir myProject.git
+    b. Initialize a bare repository in the server
+        cd myProject.git
+        git init --bare
+    c. Now initialize an empty repository in the source directory
+        cd myProjectSourceDirectory
+        git init
+    d. Stage all the files in the source into the empty repository
+        git add .
+    e. Commit the staged changes
+        git commit -m "Initial Commit"
+    f. Connect the server as the origin in the source repository
+        git remote add origin user@serverIP:/path/to/the/server/git/repo.git
+    g. Now push the commit to the server repository
+        git push origin master
